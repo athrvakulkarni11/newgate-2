@@ -1,0 +1,13 @@
+streamlit
+requests
+beautifulsoup4
+google-search-results
+groq
+python-dotenv
+langchain
+langchain-community
+html2text
+wikipedia
+spacy
+
+
