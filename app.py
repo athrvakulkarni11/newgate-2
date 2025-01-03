@@ -9,6 +9,8 @@ from fpdf import FPDF, XPos, YPos
 import textwrap
 from organization_searcher import OrganizationSearcher
 from urllib.parse import urlparse
+from database_manager import DatabaseManager
+from data_processor import DataProcessor
 
 # Configure logging
 import logging
@@ -37,6 +39,12 @@ if 'sources' not in st.session_state:
     st.session_state.sources = None
 if 'query' not in st.session_state:
     st.session_state.query = None
+
+# Initialize database manager
+db_manager = DatabaseManager()
+
+# Initialize DataProcessor
+data_processor = DataProcessor()
 
 def generate_report(content, sources):
     """Generate report using Groq"""
@@ -307,55 +315,74 @@ org_name = st.text_input("Enter organization name:",
 
 async def run_org_search(org_name):
     async with OrganizationSearcher() as org_searcher:
-        return await org_searcher.fetch_organization_data(org_name)
+        try:
+            raw_data = await org_searcher.fetch_organization_data(org_name)
+            if raw_data:
+                # Process the raw data through LLM
+                structured_data = data_processor.structure_organization_data(raw_data)
+                if structured_data:
+                    # Clean the data before saving
+                    for key in structured_data["organization"]:
+                        structured_data["organization"][key] = data_processor.clean_text(
+                            structured_data["organization"][key]
+                        )
+                    
+                    for leader in structured_data.get("leaders", []):
+                        for key in leader:
+                            leader[key] = data_processor.clean_text(leader[key])
+                    
+                    for news in structured_data.get("news", []):
+                        for key in news:
+                            news[key] = data_processor.clean_text(news[key])
+                    
+                    # Save to database
+                    db_manager.save_organization_data(structured_data)
+                    return structured_data
+                else:
+                    st.error("Failed to structure the organization data")
+            return None
+        except Exception as e:
+            st.error(f"Error processing organization data: {str(e)}")
+            return None
 
 if st.button("Research Organization"):
     with st.spinner("Researching organization..."):
         try:
-            # Run the async function using asyncio.run()
             result = asyncio.run(run_org_search(org_name))
             
             if result:
-                # Create two columns for layout
                 col1, col2 = st.columns([2, 1])
                 
                 with col1:
                     # Organization Info
                     st.subheader("Organization Information")
-                    st.write(result["organization"].get("description", ""))
+                    org_info = result["organization"]
+                    st.write(f"**Description:** {org_info['description']}")
+                    st.write(f"**Ideology:** {org_info['ideology']}")
+                    st.write(f"**Founded:** {org_info['founding_date']}")
+                    st.write(f"**Headquarters:** {org_info['headquarters']}")
                     
-                    # Display leaders
+                    # Leaders
                     if result["leaders"]:
                         st.subheader("Leaders and Key Members")
                         for leader in result["leaders"]:
-                            with st.expander(f"📋 {leader.get('title', 'Unknown')}"):
-                                st.write(leader.get('description', ''))
-                                st.write(f"Source: {leader.get('source', '')}")
+                            with st.expander(f"📋 {leader['name']} - {leader['position']}"):
+                                st.write(f"**Background:** {leader['background']}")
+                                st.write(f"**Education:** {leader['education']}")
+                                st.write(f"**Political History:** {leader['political_history']}")
+                                st.write(f"**Achievements:** {leader['achievements']}")
+                                st.write(f"**Source:** {leader['source_url']}")
                     
-                    # Display recent news
+                    # News
                     if result["news"]:
                         st.subheader("Recent News")
                         for news in result["news"]:
-                            with st.expander(f"📰 {news.get('title', 'Untitled')}"):
-                                st.write(news.get('summary', ''))
-                                st.write(f"Source: {news.get('source', '')}")
-                
-                with col2:
-                    st.markdown("## Sources")
-                    if result["organization"].get("sources"):
-                        for source in result["organization"]["sources"]:
-                            st.markdown(f"- [{urlparse(source).netloc}]({source})")
-                    
-                    st.markdown("---")
-                    st.markdown("### About this Research")
-                    st.markdown("""
-                    - Generated using AI analysis
-                    - Based on multiple web sources
-                    - Updated as of current search
-                    - Includes leadership and news
-                    """)
+                            with st.expander(f"📰 {news['title']}"):
+                                st.write(news['content'])
+                                st.write(f"Published: {news['publication_date']}")
+                                st.write(f"Source: {news['source_url']}")
             else:
-                st.warning("No information found for this organization")
+                st.warning("No information found for this organization. Please try a different search term.")
                 
         except Exception as e:
             st.error(f"An error occurred: {str(e)}")
