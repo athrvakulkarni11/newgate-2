@@ -8,6 +8,7 @@ from datetime import datetime
 from fpdf import FPDF, XPos, YPos
 import textwrap
 from organization_searcher import OrganizationSearcher
+from urllib.parse import urlparse
 
 # Configure logging
 import logging
@@ -304,24 +305,58 @@ st.header("Political Organization Research")
 org_name = st.text_input("Enter organization name:", 
                         help="Enter the name of a political organization")
 
+async def run_org_search(org_name):
+    async with OrganizationSearcher() as org_searcher:
+        return await org_searcher.fetch_organization_data(org_name)
+
 if st.button("Research Organization"):
     with st.spinner("Researching organization..."):
-        org_searcher = OrganizationSearcher()
-        result = asyncio.run(org_searcher.fetch_organization_data(org_name))
-        
-        if result:
-            # Display organization info
-            st.subheader("Organization Information")
-            st.write(result["organization"])
+        try:
+            # Run the async function using asyncio.run()
+            result = asyncio.run(run_org_search(org_name))
             
-            # Display leaders
-            st.subheader("Leaders and Key Members")
-            for leader in result["leaders"]:
-                with st.expander(f"📋 {leader['name']}"):
-                    st.write(leader)
-            
-            # Display recent news
-            st.subheader("Recent News")
-            for news in result["news"]:
-                with st.expander(f"📰 {news['title']}"):
-                    st.write(news) 
+            if result:
+                # Create two columns for layout
+                col1, col2 = st.columns([2, 1])
+                
+                with col1:
+                    # Organization Info
+                    st.subheader("Organization Information")
+                    st.write(result["organization"].get("description", ""))
+                    
+                    # Display leaders
+                    if result["leaders"]:
+                        st.subheader("Leaders and Key Members")
+                        for leader in result["leaders"]:
+                            with st.expander(f"📋 {leader.get('title', 'Unknown')}"):
+                                st.write(leader.get('description', ''))
+                                st.write(f"Source: {leader.get('source', '')}")
+                    
+                    # Display recent news
+                    if result["news"]:
+                        st.subheader("Recent News")
+                        for news in result["news"]:
+                            with st.expander(f"📰 {news.get('title', 'Untitled')}"):
+                                st.write(news.get('summary', ''))
+                                st.write(f"Source: {news.get('source', '')}")
+                
+                with col2:
+                    st.markdown("## Sources")
+                    if result["organization"].get("sources"):
+                        for source in result["organization"]["sources"]:
+                            st.markdown(f"- [{urlparse(source).netloc}]({source})")
+                    
+                    st.markdown("---")
+                    st.markdown("### About this Research")
+                    st.markdown("""
+                    - Generated using AI analysis
+                    - Based on multiple web sources
+                    - Updated as of current search
+                    - Includes leadership and news
+                    """)
+            else:
+                st.warning("No information found for this organization")
+                
+        except Exception as e:
+            st.error(f"An error occurred: {str(e)}")
+            logging.error(f"Error in organization search: {str(e)}") 
