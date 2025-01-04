@@ -348,47 +348,54 @@ with tab1:
                 # Get organization data
                 org_data = asyncio.run(org_searcher.fetch_organization_data(search_query))
                 
-                if org_data:
-                    # Structure the data
-                    structured_data = data_processor.structure_organization_data(org_data)
-                    
-                    if structured_data:
-                        # Automatically save to database
-                        try:
-                            result = db_manager.save_organization_data(structured_data)
-                            if result:
-                                st.success("✅ Information found and saved successfully!")
-                            else:
-                                st.error("⚠️ Information found but could not be saved.")
-                        except Exception as e:
-                            st.error(f"❌ Database error: {str(e)}")
-                            logging.error(f"Database save error: {str(e)}")
+                # Debug: Show raw data structure
+                st.write("### Debug: Data Structure")
+                st.write("Organization data:", org_data.get("organization", {}))
+                st.write("Number of leaders found:", len(org_data.get("leaders", [])))
+                st.write("Number of news items found:", len(org_data.get("news", [])))
+                
+                if org_data and org_data.get("organization"):
+                    # Display organization info
+                    with st.expander("📋 Organization Information", expanded=True):
+                        org_info = org_data["organization"]
+                        st.markdown(f"### {org_info.get('name', search_query)}")
                         
-                        # Display organization info
-                        with st.expander("📋 Organization Information", expanded=True):
-                            # Display organization details
-                            org_info = structured_data.get("organization", {})
-                            st.markdown(f"### {org_info.get('name', 'Organization Name')}")
-                            st.write(f"**Description:** {org_info.get('description', 'N/A')}")
-                            st.write(f"**Ideology:** {org_info.get('ideology', 'N/A')}")
-                            st.write(f"**Founded:** {org_info.get('founding_date', 'N/A')}")
-                            st.write(f"**Headquarters:** {org_info.get('headquarters', 'N/A')}")
-                            if org_info.get('website'):
-                                st.write(f"**Website:** {org_info['website']}")
-                            
-                            # Display leaders if available
-                            if structured_data.get("leaders"):
-                                st.markdown("### Leadership")
-                                for leader in structured_data["leaders"]:
-                                    st.markdown(f"""
-                                    **{leader.get('name', 'N/A')}** - {leader.get('position', 'N/A')}
-                                    - Background: {leader.get('background', 'N/A')}
-                                    - Education: {leader.get('education', 'N/A')}
-                                    """)
-                    else:
-                        st.error("❌ Failed to structure the organization data")
+                        for key, value in org_info.items():
+                            if key != 'name' and value:
+                                st.write(f"**{key.title()}:** {value}")
+
+                    # Display leaders
+                    if org_data.get("leaders"):
+                        st.markdown("### Leadership")
+                        for leader in org_data["leaders"]:
+                            st.markdown(f"""
+                            **{leader.get('name', 'N/A')}**
+                            - Position: {leader.get('position', 'N/A')}
+                            - Background: {leader.get('background', 'N/A')}
+                            """)
+
+                    # Display news
+                    if org_data.get("news"):
+                        st.markdown("### Recent News")
+                        for article in org_data["news"]:
+                            st.markdown(f"""
+                            **{article.get('title', 'N/A')}**
+                            {article.get('content', '')}
+                            Date: {article.get('publication_date', 'N/A')}
+                            {f'[Source]({article.get("source_url")})' if article.get('source_url') else ''}
+                            """)
+
+                    # Save to database
+                    try:
+                        if db_manager.save_organization_data(org_data):
+                            st.success("✅ Information saved successfully!")
+                        else:
+                            st.warning("⚠️ Information found but could not be saved.")
+                    except Exception as e:
+                        st.error(f"❌ Database error: {str(e)}")
+                        st.write("Error details:", str(e))
                 else:
-                    st.warning("⚠️ No information found for this organization. Please try a different search term.")
+                    st.warning("⚠️ No information found for this organization.")
                     
         except Exception as e:
             st.error(f"❌ An error occurred: {str(e)}")

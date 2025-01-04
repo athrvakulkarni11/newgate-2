@@ -14,59 +14,74 @@ class OrganizationSearcher:
         self.serpapi_key = os.getenv('SERPAPI_KEY')
         self.logger = logging.getLogger(__name__)
 
-    async def fetch_organization_data(self, org_name: str) -> Optional[Dict]:
-        """Fetch organization data from multiple sources"""
+    async def fetch_organization_data(self, org_name: str) -> Dict:
+        """Fetch organization data including leaders and news"""
         try:
             self.logger.info(f"Searching for: {org_name}")
             
-            # Gather data from web sources
-            web_data = await self._gather_web_data(org_name)
-            
-            if not web_data:
-                self.logger.warning("No data found from web sources")
-                return None
+            # More specific prompt to get structured data
+            org_prompt = f"""Research the organization "{org_name}" and provide information in this exact format:
 
-            # Analyze gathered data
-            analysis_prompt = f"""Analyze this information about {org_name}:
+            ORGANIZATION PROFILE
+            Name: [Organization name]
+            Description: [2-3 sentence description]
+            Ideology: [Political/ideological stance]
+            Founded: [Year founded]
+            Headquarters: [City, Country]
+            Website: [URL]
 
-{web_data}
+            LEADERSHIP
+            [For each leader use exactly this format:]
+            Leader: [Full Name]
+            Position: [Current role]
+            Background: [Brief background]
 
-Provide a structured analysis in the following format:
+            RECENT NEWS
+            [For each news item use exactly this format:]
+            Title: [News headline]
+            Date: [Publication date]
+            Summary: [Brief summary]
+            Source: [Source URL if available]
 
-ORGANIZATION PROFILE
--------------------
-Full Name: [Organization name]
-Type: [Organization type]
-Description: [Brief description]
-Ideology: [If applicable]
-Founding Date: [When established]
-Headquarters: [Location]
-Website: [Official website]
+            Please provide actual information, not the placeholder text in brackets.
+            """
 
-LEADERSHIP STRUCTURE
--------------------
-[Current leaders and their roles]
-
-RECENT DEVELOPMENTS
-------------------
-[Recent news and developments]
-
-Focus on providing factual, verifiable information."""
-
-            # Get analysis from LLM
             response = self.groq_client.chat.completions.create(
                 model="llama-3.2-90b-vision-preview",
                 messages=[
-                    {"role": "system", "content": "You are a research analyst. Provide factual information based on the given data."},
-                    {"role": "user", "content": analysis_prompt}
+                    {"role": "system", "content": "You are a research analyst providing factual information about organizations."},
+                    {"role": "user", "content": org_prompt}
                 ],
-                temperature=0.3
+                temperature=0.3,
+                max_tokens=2000
             )
 
-            return self._structure_analysis(response.choices[0].message.content, web_data)
+            content = response.choices[0].message.content
+            self.logger.info("Received response from LLM")
+
+            # Parse organization profile
+            org_section = self._extract_section(content, "ORGANIZATION PROFILE", "LEADERSHIP")
+            org_info = self._parse_organization_section(org_section)
+
+            # Parse leadership
+            leadership_section = self._extract_section(content, "LEADERSHIP", "RECENT NEWS")
+            leaders = self._parse_leadership_section(leadership_section)
+
+            # Parse news
+            news_section = self._extract_section(content, "RECENT NEWS", None)
+            news = self._parse_news_section(news_section)
+
+            result = {
+                "organization": org_info,
+                "leaders": leaders,
+                "news": news
+            }
+
+            self.logger.info(f"Parsed data - Org: {bool(org_info)}, Leaders: {len(leaders)}, News: {len(news)}")
+            return result
 
         except Exception as e:
-            self.logger.error(f"Error in fetch_organization_data: {e}")
+            self.logger.error(f"Error in fetch_organization_data: {str(e)}")
             return None
 
     async def _gather_web_data(self, org_name: str) -> str:
@@ -90,6 +105,9 @@ Focus on providing factual, verifiable information."""
                 news_data = await self._search_news(session, org_name)
                 if news_data:
                     results.extend(news_data)
+
+                # Add debug logging
+                self.logger.info(f"Number of results gathered: {len(results)}")
 
                 if not results:
                     self.logger.warning(f"No results found for {org_name} from any source")
@@ -226,7 +244,7 @@ URL: {item['link']}
         
         return results
 
-    def _structure_analysis(self, analysis: str, raw_data: str) -> Optional[Dict]:
+    def _structure_analysis(self, analysis: str, raw_data: str) -> Dict:
         """Structure the analysis into the required format"""
         try:
             # Extract organization info
@@ -240,23 +258,19 @@ URL: {item['link']}
                 'website': self._extract_field(analysis, 'Website:')
             }
 
-            # Extract leadership info
-            leadership_section = self._extract_section(analysis, 'LEADERSHIP STRUCTURE', 'RECENT DEVELOPMENTS')
-            leaders = self._parse_leaders(leadership_section)
+            # Add debug logging
+            self.logger.info(f"Extracted organization info: {bool(org_info['name'])}")
 
-            # Extract news
-            news_section = self._extract_section(analysis, 'RECENT DEVELOPMENTS', None)
-            news = self._parse_news(news_section, raw_data)
+            # Ensure required fields are present
+            if not org_info['name'] or not org_info['description']:
+                self.logger.warning("Missing required organization fields")
+                return {}
 
-            return {
-                'organization': org_info,
-                'leaders': leaders,
-                'news': news
-            }
+            return org_info
 
         except Exception as e:
             self.logger.error(f"Error in _structure_analysis: {e}")
-            return None
+            return {}
 
     def _extract_field(self, text: str, field: str) -> str:
         """Extract a field value from text"""
@@ -264,67 +278,83 @@ URL: {item['link']}
         match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
         return match.group(1).strip() if match else ""
 
-    def _extract_section(self, text: str, start_marker: str, end_marker: str) -> str:
-        """Extract a section from text"""
-        start_idx = text.find(start_marker)
-        if start_idx == -1:
+    def _extract_section(self, text: str, start_marker: str, end_marker: str = None) -> str:
+        """Extract a section from text between markers"""
+        try:
+            start_idx = text.find(start_marker)
+            if start_idx == -1:
+                return ""
+            
+            start_idx += len(start_marker)
+            
+            if end_marker:
+                end_idx = text.find(end_marker, start_idx)
+                if end_idx == -1:
+                    return text[start_idx:].strip()
+                return text[start_idx:end_idx].strip()
+            return text[start_idx:].strip()
+        except Exception as e:
+            self.logger.error(f"Error extracting section: {str(e)}")
             return ""
-        
-        if end_marker:
-            end_idx = text.find(end_marker, start_idx)
-            if end_idx == -1:
-                return text[start_idx:].strip()
-            return text[start_idx:end_idx].strip()
-        return text[start_idx:].strip()
 
-    def _parse_leaders(self, leadership_text: str) -> List[Dict]:
-        """Parse leadership information"""
+    def _parse_organization_section(self, section: str) -> Dict:
+        """Parse organization profile section"""
+        org_info = {}
+        for line in section.split('\n'):
+            if ':' in line:
+                key, value = line.split(':', 1)
+                key = key.strip().lower()
+                value = value.strip()
+                if value and not value.startswith('['):  # Skip template placeholders
+                    org_info[key] = value
+        return org_info
+
+    def _parse_leadership_section(self, section: str) -> List[Dict]:
+        """Parse leadership section"""
         leaders = []
-        # Split by newlines and process each line
-        lines = leadership_text.split('\n')
         current_leader = {}
         
-        for line in lines:
+        for line in section.split('\n'):
             line = line.strip()
             if not line:
                 continue
-                
-            if ':' in line:
-                name, role = line.split(':', 1)
-                current_leader = {
-                    'name': name.strip(),
-                    'position': role.strip(),
-                    'background': '',
-                    'education': '',
-                    'political_history': ''
-                }
-                leaders.append(current_leader)
-            elif current_leader:
-                # Add additional info to current leader
-                current_leader['background'] = line
-
+            
+            if line.startswith('Leader:'):
+                if current_leader:
+                    leaders.append(current_leader)
+                current_leader = {'name': line.replace('Leader:', '').strip()}
+            elif line.startswith('Position:'):
+                current_leader['position'] = line.replace('Position:', '').strip()
+            elif line.startswith('Background:'):
+                current_leader['background'] = line.replace('Background:', '').strip()
+        
+        if current_leader:  # Add the last leader
+            leaders.append(current_leader)
+        
         return leaders
 
-    def _parse_news(self, news_text: str, raw_data: str) -> List[Dict]:
-        """Parse news information"""
+    def _parse_news_section(self, section: str) -> List[Dict]:
+        """Parse news section"""
         news_items = []
-        lines = news_text.split('\n')
+        current_news = {}
         
-        for line in lines:
+        for line in section.split('\n'):
             line = line.strip()
-            if line and not line.startswith('---'):
-                news_items.append({
-                    'title': line,
-                    'content': self._find_news_content(line, raw_data),
-                    'source_url': '',
-                    'publication_date': ''
-                })
-
-        return news_items[:5]  # Return up to 5 news items
-
-    def _find_news_content(self, title: str, raw_data: str) -> str:
-        """Find news content in raw data"""
-        for line in raw_data.split('\n'):
-            if title.lower() in line.lower():
-                return line
-        return "" 
+            if not line:
+                continue
+            
+            if line.startswith('Title:'):
+                if current_news:
+                    news_items.append(current_news)
+                current_news = {'title': line.replace('Title:', '').strip()}
+            elif line.startswith('Date:'):
+                current_news['publication_date'] = line.replace('Date:', '').strip()
+            elif line.startswith('Summary:'):
+                current_news['content'] = line.replace('Summary:', '').strip()
+            elif line.startswith('Source:'):
+                current_news['source_url'] = line.replace('Source:', '').strip()
+        
+        if current_news:  # Add the last news item
+            news_items.append(current_news)
+        
+        return news_items 

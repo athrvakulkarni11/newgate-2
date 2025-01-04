@@ -62,76 +62,124 @@ class DatabaseManager:
             self.logger.error(f"Error initializing database: {e}")
             raise e
 
-    def save_organization_data(self, org_data: Dict) -> Optional[Dict]:
-        """Save organization data and its leaders to the database"""
+    def save_organization_data(self, data: Dict) -> bool:
+        """Save organization data including leaders and news"""
         try:
-            # Log the incoming data structure
-            self.logger.info("Received data structure for saving")
+            self.logger.info("Starting to save organization data")
             
-            # Extract organization data
-            org_info = {
-                "name": org_data.get("organization", {}).get("name", "").strip(),
-                "description": org_data.get("organization", {}).get("description", "").strip(),
-                "ideology": org_data.get("organization", {}).get("ideology", "").strip(),
-                "founding_date": org_data.get("organization", {}).get("founding_date", "").strip(),
-                "headquarters": org_data.get("organization", {}).get("headquarters", "").strip(),
-                "website": org_data.get("organization", {}).get("website", "").strip()
+            # Extract data
+            org_data = data.get("organization", {})
+            leaders_data = data.get("leaders", [])
+            news_data = data.get("news", [])
+
+            # Validate organization data
+            if not org_data:
+                self.logger.error("No organization data to save")
+                return False
+
+            # Ensure required fields exist
+            org_name = org_data.get("name", "").strip()
+            if not org_name:
+                self.logger.error("Organization name is required")
+                return False
+
+            # Prepare organization data
+            org_record = {
+                "name": org_name,
+                "description": org_data.get("description", ""),
+                "ideology": org_data.get("ideology", ""),
+                "founding_date": org_data.get("founded", ""),
+                "headquarters": org_data.get("headquarters", ""),
+                "website": org_data.get("website", "")
             }
 
-            # Validate required fields
-            if not org_info["name"]:
-                self.logger.error("Organization name is missing")
-                return None
-
+            # Save organization
             try:
                 # Check if organization exists
-                existing_org = self.get_organization_by_name(org_info["name"])
+                existing = self.supabase.table('organizations').select("*").eq('name', org_name).execute()
                 
-                if existing_org:
-                    self.logger.info(f"Updating existing organization: {org_info['name']}")
-                    response = self.supabase.table('organizations').update(org_info).eq('name', org_info["name"]).execute()
+                if not existing.data:
+                    self.logger.info(f"Creating new organization: {org_name}")
+                    self.supabase.table('organizations').insert(org_record).execute()
                 else:
-                    self.logger.info(f"Creating new organization: {org_info['name']}")
-                    response = self.supabase.table('organizations').insert(org_info).execute()
-
-                if not response.data:
-                    self.logger.error("No data returned from database operation")
-                    return None
-
-                # Process leaders
-                if "leaders" in org_data and isinstance(org_data["leaders"], list):
-                    # Remove existing leaders
-                    self.supabase.table('leaders').delete().eq('organization', org_info["name"]).execute()
-                    
-                    # Add new leaders
-                    for leader in org_data["leaders"]:
-                        leader_data = {
-                            "name": leader.get("name", "").strip(),
-                            "position": leader.get("position", "").strip(),
-                            "organization": org_info["name"],
-                            "background": leader.get("background", "").strip(),
-                            "education": leader.get("education", "").strip(),
-                            "political_history": leader.get("political_history", "").strip(),
-                            "achievements": leader.get("achievements", "").strip(),
-                            "source_url": leader.get("source_url", "").strip()
-                        }
-                        
-                        if leader_data["name"]:  # Only save if name exists
-                            try:
-                                self.supabase.table('leaders').insert(leader_data).execute()
-                            except Exception as e:
-                                self.logger.error(f"Error saving leader {leader_data['name']}: {str(e)}")
-
-                self.logger.info(f"Successfully saved organization: {org_info['name']}")
-                return response.data[0]
-
+                    self.logger.info(f"Updating existing organization: {org_name}")
+                    self.supabase.table('organizations').update(org_record).eq('name', org_name).execute()
             except Exception as e:
-                self.logger.error(f"Database operation failed: {str(e)}")
-                return None
+                self.logger.error(f"Error saving organization: {str(e)}")
+                raise
+
+            # Save leaders
+            if leaders_data:
+                try:
+                    # Delete existing leaders
+                    self.supabase.table('leaders').delete().eq('organization', org_name).execute()
+                    
+                    # Prepare and insert new leaders
+                    for leader in leaders_data:
+                        leader_record = {
+                            "name": leader.get("name", ""),
+                            "position": leader.get("position", ""),
+                            "background": leader.get("background", ""),
+                            "organization": org_name
+                        }
+                        self.supabase.table('leaders').insert(leader_record).execute()
+                    self.logger.info(f"Saved {len(leaders_data)} leaders")
+                except Exception as e:
+                    self.logger.error(f"Error saving leaders: {str(e)}")
+                    # Continue execution even if leaders fail
+
+            # Save news
+            if news_data:
+                try:
+                    # Delete existing news
+                    self.supabase.table('news_articles').delete().eq('organization', org_name).execute()
+                    
+                    # Prepare and insert new news
+                    for article in news_data:
+                        news_record = {
+                            "title": article.get("title", ""),
+                            "content": article.get("content", ""),
+                            "source_url": article.get("source_url", ""),
+                            "publication_date": article.get("publication_date", datetime.now().isoformat()),
+                            "organization": org_name
+                        }
+                        self.supabase.table('news_articles').insert(news_record).execute()
+                    self.logger.info(f"Saved {len(news_data)} news articles")
+                except Exception as e:
+                    self.logger.error(f"Error saving news: {str(e)}")
+                    # Continue execution even if news fails
+
+            self.logger.info("Successfully saved all organization data")
+            return True
 
         except Exception as e:
             self.logger.error(f"Error in save_organization_data: {str(e)}")
-            return None
+            return False
+
+    def get_organization_data(self, org_name: str) -> Dict:
+        """Get complete organization data including leaders and news"""
+        try:
+            # Get organization
+            org = self.supabase.table('organizations').select("*").eq('name', org_name).execute()
+            
+            if not org.data:
+                return {}
+
+            # Get leaders
+            leaders = self.supabase.table('leaders').select("*").eq('organization', org_name).execute()
+            
+            # Get news
+            news = self.supabase.table('news_articles').select("*").eq('organization', org_name).execute()
+
+            return {
+                "organization": org.data[0] if org.data else {},
+                "leaders": leaders.data if leaders.data else [],
+                "news": news.data if news.data else []
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error retrieving organization data: {str(e)}")
+            return {}
 
     def get_all_organizations(self) -> List[Dict]:
         """Fetch all organizations from the database"""
@@ -231,10 +279,20 @@ class DatabaseManager:
             self.logger.error(f"Error fetching organization members: {e}")
             return []
 
-    def get_organization_news(self, organization_name: str) -> List[Dict]:
-        """Get news for a specific organization"""
-        # Since we don't have a news table, return empty list
-        return [] 
+    def get_organization_news(self, org_name):
+        """Get news articles for an organization"""
+        try:
+            response = self.supabase.table('news_articles') \
+                .select("*") \
+                .eq('organization', org_name) \
+                .order('publication_date', desc=True) \
+                .execute()
+            
+            logging.info(f"Retrieved {len(response.data)} news articles for {org_name}")
+            return response.data
+        except Exception as e:
+            logging.error(f"Error fetching organization news: {str(e)}")
+            return []
 
     def _check_tables(self):
         """Debug method to check table structure"""
