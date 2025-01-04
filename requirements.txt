@@ -9,5 +9,14 @@ langchain-community
 html2text
 wikipedia
 spacy
+aiohttp
+fpdf2
+asyncio
+typing
+urllib3
+psycopg2-binary
+python-dateutil
+pandas
+numpy
 
 
