@@ -10,8 +10,8 @@ import re
 
 class OrganizationSearcher:
     def __init__(self):
-        self.groq_client = Groq(api_key=os.getenv('GROQ_API_KEY'))
-        self.serpapi_key = os.getenv('SERPAPI_KEY')
+        self.groq_client = Groq(api_key="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")
+        self.serpapi_key = "5a1c9bfb903e6b0224a8d31b26470a45c536e5d18cf7c1ae10453cdb5b156de4"
         self.logger = logging.getLogger(__name__)
 
     async def fetch_organization_data(self, org_name: str) -> Dict:

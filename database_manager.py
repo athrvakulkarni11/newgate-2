@@ -8,8 +8,8 @@ class DatabaseManager:
     def __init__(self):
         try:
             self.supabase = create_client(
-                st.secrets["SUPABASE_URL"],
-                st.secrets["SUPABASE_KEY"]
+                "https://vitoohbkhesyhwjkejyj.supabase.co",
+                "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpdG9vaGJraGVzeWh3amtlanlqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzYwMDYxNzIsImV4cCI6MjA1MTU4MjE3Mn0.v8_Y9AlTBYJhxDfvHiyF2EoZAsdHUXWLQqfSDC0Tjvk"
             )
             self.logger = logging.getLogger(__name__)
             self._check_tables()

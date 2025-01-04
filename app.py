@@ -16,17 +16,10 @@ import time
 import logging
 logging.basicConfig(level=logging.INFO)
 
-# Load environment variables
-load_dotenv()
-
-# Get API keys from environment variables
-SERPAPI_KEY = os.getenv('SERPAPI_KEY')
-GROQ_API_KEY = os.getenv('GROQ_API_KEY')
-
-# Validate API keys
-if not SERPAPI_KEY or not GROQ_API_KEY:
-    st.error("Please set up your API keys in the .env file")
-    st.stop()
+# Direct API key assignment
+SERPAPI_KEY = "5a1c9bfb903e6b0224a8d31b26470a45c536e5d18cf7c1ae10453cdb5b156de4"
+GROQ_API_KEY = "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"
+NEWSAPI_KEY = "0f9493bcb3b24ed49e5afb56031dfec8"
 
 # At the start of your app, add this check
 if not os.getenv('SERPAPI_KEY'):
