@@ -70,47 +70,161 @@ Focus on providing factual, verifiable information."""
             return None
 
     async def _gather_web_data(self, org_name: str) -> str:
-        """Gather data from multiple web sources"""
+        """Gather data from multiple sources with better error handling"""
         try:
             async with aiohttp.ClientSession() as session:
                 results = []
                 
-                # Search using SerpAPI
+                # First try direct company search
+                company_data = await self._search_company_info(session, org_name)
+                if company_data:
+                    results.extend(company_data)
+                    
+                # If no results, try broader search
+                if not results:
+                    self.logger.info(f"No direct company results for {org_name}, trying broader search...")
+                    broader_data = await self._search_broader_info(session, org_name)
+                    results.extend(broader_data)
+
+                # Always try to get news
+                news_data = await self._search_news(session, org_name)
+                if news_data:
+                    results.extend(news_data)
+
+                if not results:
+                    self.logger.warning(f"No results found for {org_name} from any source")
+                    return ""
+
+                return "\n\n".join(results)
+
+        except Exception as e:
+            self.logger.error(f"Error in _gather_web_data: {str(e)}")
+            return ""
+
+    async def _search_company_info(self, session: aiohttp.ClientSession, org_name: str) -> List[str]:
+        """Search specifically for company information"""
+        results = []
+        try:
+            # Basic company search
+            params = {
+                "api_key": self.serpapi_key,
+                "q": f'"{org_name}" company OR business OR organization',
+                "num": 10,
+                "gl": "us",
+                "hl": "en"
+            }
+            
+            async with session.get("https://serpapi.com/search", params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if "organic_results" in data:
+                        for result in data["organic_results"]:
+                            snippet = result.get("snippet", "")
+                            title = result.get("title", "")
+                            link = result.get("link", "")
+                            
+                            # Less strict matching to ensure we get results
+                            if any(term.lower() in title.lower() or term.lower() in snippet.lower() 
+                                  for term in org_name.lower().split()):
+                                results.append(f"""
+COMPANY INFORMATION:
+Title: {title}
+Description: {snippet}
+Source: {link}
+""")
+                                
+            # Try LinkedIn search as well
+            linkedin_params = {
+                "api_key": self.serpapi_key,
+                "q": f'site:linkedin.com/company {org_name}',
+                "num": 3
+            }
+            
+            async with session.get("https://serpapi.com/search", params=linkedin_params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if "organic_results" in data:
+                        for result in data["organic_results"]:
+                            results.append(f"""
+LINKEDIN PROFILE:
+{result.get('title', '')}
+{result.get('snippet', '')}
+URL: {result.get('link', '')}
+""")
+                                
+        except Exception as e:
+            self.logger.error(f"Error in company search: {str(e)}")
+        
+        return results
+
+    async def _search_broader_info(self, session: aiohttp.ClientSession, org_name: str) -> List[str]:
+        """Perform a broader search for information"""
+        results = []
+        try:
+            search_queries = [
+                f'{org_name} about',
+                f'{org_name} overview',
+                f'{org_name} description'
+            ]
+            
+            for query in search_queries:
                 params = {
                     "api_key": self.serpapi_key,
-                    "q": f"{org_name}",
-                    "num": 10
+                    "q": query,
+                    "num": 5
                 }
                 
                 async with session.get("https://serpapi.com/search", params=params) as response:
                     if response.status == 200:
                         data = await response.json()
                         if "organic_results" in data:
-                            for result in data["organic_results"][:5]:
+                            for result in data["organic_results"]:
                                 snippet = result.get("snippet", "")
-                                title = result.get("title", "")
-                                results.append(f"Title: {title}\nContent: {snippet}")
-                
-                # Get news results
-                news_params = {
-                    "api_key": self.serpapi_key,
-                    "q": f"{org_name} news",
-                    "tbm": "nws",
-                    "num": 5
-                }
-                
-                async with session.get("https://serpapi.com/search", params=news_params) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        if "news_results" in data:
-                            for item in data["news_results"]:
-                                results.append(f"News: {item['title']}\nSummary: {item['snippet']}")
-
-                return "\n\n".join(results) if results else ""
-
+                                if snippet:
+                                    results.append(f"""
+GENERAL INFORMATION:
+Source: {result.get('title', '')}
+Content: {snippet}
+URL: {result.get('link', '')}
+""")
+                                
+            await asyncio.sleep(0.2)  # Small delay between requests
+            
         except Exception as e:
-            self.logger.error(f"Error gathering web data: {e}")
-            return ""
+            self.logger.error(f"Error in broader search: {str(e)}")
+        
+        return results
+
+    async def _search_news(self, session: aiohttp.ClientSession, org_name: str) -> List[str]:
+        """Search for news articles"""
+        results = []
+        try:
+            params = {
+                "api_key": self.serpapi_key,
+                "q": org_name,
+                "tbm": "nws",
+                "num": 5,
+                "tbs": "qdr:m"  # Last month
+            }
+            
+            async with session.get("https://serpapi.com/search", params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if "news_results" in data:
+                        for item in data["news_results"]:
+                            results.append(f"""
+NEWS:
+Title: {item['title']}
+Summary: {item['snippet']}
+Date: {item.get('date', 'N/A')}
+Source: {item['source']}
+URL: {item['link']}
+""")
+                                
+        except Exception as e:
+            self.logger.error(f"Error in news search: {str(e)}")
+        
+        return results
 
     def _structure_analysis(self, analysis: str, raw_data: str) -> Optional[Dict]:
         """Structure the analysis into the required format"""

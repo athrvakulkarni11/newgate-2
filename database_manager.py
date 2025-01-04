@@ -230,6 +230,50 @@ class DatabaseManager:
             self.conn.rollback()
             return []
 
+    def delete_organization(self, org_name: str) -> bool:
+        """Delete an organization and its related data"""
+        try:
+            # Start transaction
+            self.cursor.execute("START TRANSACTION")
+            
+            # Get organization ID
+            self.cursor.execute(
+                "SELECT id FROM organizations WHERE name = %s FOR UPDATE", 
+                (org_name,)
+            )
+            org = self.cursor.fetchone()
+            
+            if org:
+                org_id = org['id']
+                
+                # Delete related data first
+                self.cursor.execute(
+                    "DELETE FROM news WHERE organization_id = %s", 
+                    (org_id,)
+                )
+                self.cursor.execute(
+                    "DELETE FROM leaders WHERE organization_id = %s", 
+                    (org_id,)
+                )
+                
+                # Delete the organization
+                self.cursor.execute(
+                    "DELETE FROM organizations WHERE id = %s", 
+                    (org_id,)
+                )
+                
+                # Commit transaction
+                self.cursor.execute("COMMIT")
+                return True
+            
+            self.cursor.execute("ROLLBACK")
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"Error deleting organization: {e}")
+            self.cursor.execute("ROLLBACK")
+            return False
+
     def __del__(self):
         """Cleanup database connections"""
         if self.cursor:

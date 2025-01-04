@@ -10,6 +10,7 @@ import textwrap
 from organization_searcher import OrganizationSearcher
 from database_manager import DatabaseManager
 from data_processor import DataProcessor
+import time
 
 # Configure logging
 import logging
@@ -25,6 +26,11 @@ GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 # Validate API keys
 if not SERPAPI_KEY or not GROQ_API_KEY:
     st.error("Please set up your API keys in the .env file")
+    st.stop()
+
+# At the start of your app, add this check
+if not os.getenv('SERPAPI_KEY'):
+    st.error("⚠️ SERPAPI_KEY is not set. Please set it in your environment variables.")
     st.stop()
 
 # Initialize clients
@@ -120,8 +126,111 @@ if st.button("Generate Report", key="generate_report"):
 # Display report if available
 if st.session_state.report:
     st.markdown("### Generated Report")
-    st.markdown(st.session_state.report)
     
+    # Create formatted text for copying
+    formatted_report = f"""Research Report
+Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+{st.session_state.report}
+
+Sources:
+{st.session_state.sources}"""
+
+    # Display report with copy button using custom HTML/CSS
+    st.markdown("""
+    <style>
+    .report-container {
+        position: relative;
+        padding: 15px;
+        background-color: rgba(49, 51, 63, 0.8);
+        border-radius: 10px;
+        margin: 10px 0;
+    }
+    .copy-icon {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        cursor: pointer;
+        padding: 5px;
+        border-radius: 5px;
+        background-color: rgba(70, 70, 70, 0.8);
+    }
+    .copy-icon:hover {
+        background-color: rgba(90, 90, 90, 0.8);
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.code(formatted_report, language="text")
+    
+    col1, col2 = st.columns([1, 5])
+    with col1:
+        if st.button("📥 Download PDF"):
+            try:
+                # Create PDF with larger page size
+                pdf = FPDF(format='A4')  # Standard A4 size
+                pdf.add_page()
+                
+                # Use Helvetica instead of Arial and fix deprecated parameters
+                pdf.set_font("Helvetica", "B", 16)
+                pdf.cell(0, 10, "Research Report", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align='C')
+                pdf.ln(10)
+                
+                # Add timestamp
+                pdf.set_font("Helvetica", "I", 10)
+                pdf.cell(0, 10, f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", 
+                        new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                pdf.ln(10)
+                
+                # Add content with proper text wrapping
+                pdf.set_font("Helvetica", "", 12)
+                
+                # Calculate available width for text
+                effective_width = pdf.w - 2 * pdf.l_margin
+                
+                # Add report content with proper wrapping
+                lines = textwrap.wrap(st.session_state.report, width=70)  # Adjust width for better fit
+                for line in lines:
+                    pdf.multi_cell(effective_width, 10, line)
+                    pdf.ln(2)  # Small spacing between lines
+                
+                # Add sources
+                if st.session_state.sources:
+                    pdf.ln(10)
+                    pdf.set_font("Helvetica", "B", 14)
+                    pdf.cell(0, 10, "Sources:", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+                    pdf.ln(5)
+                    
+                    pdf.set_font("Helvetica", "", 12)
+                    source_lines = st.session_state.sources.split('\n')
+                    for line in source_lines:
+                        wrapped_source = textwrap.wrap(line, width=70)
+                        for wrapped_line in wrapped_source:
+                            pdf.multi_cell(effective_width, 10, wrapped_line)
+                        pdf.ln(2)
+                
+                # Save the PDF
+                pdf_filename = f"research_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+                pdf.output(pdf_filename)
+                
+                # Read PDF file and create download button
+                with open(pdf_filename, "rb") as f:
+                    pdf_bytes = f.read()
+                st.download_button(
+                    label="📄 Save PDF",
+                    data=pdf_bytes,
+                    file_name=pdf_filename,
+                    mime="application/pdf"
+                )
+                
+                # Clean up the temporary file
+                os.remove(pdf_filename)
+                
+            except Exception as e:
+                st.error(f"Error generating PDF: {str(e)}")
+                logging.error(f"PDF generation error: {str(e)}")
+
+    # Display sources separately if needed
     if st.session_state.sources:
         st.markdown("### Sources")
         st.markdown(st.session_state.sources)
@@ -358,71 +467,54 @@ with tab2:
 with tab3:
     st.subheader("Browse Organizations")
     
-    # Custom CSS with dark theme compatibility
-    st.markdown("""
-    <style>
-    /* Dark theme compatible cards */
-    .org-box {
-        background-color: rgba(49, 51, 63, 0.8) !important;
-        border-radius: 10px;
-        padding: 20px;
-        margin: 10px 0;
-        color: #ffffff !important;
-        border: 1px solid rgba(250, 250, 250, 0.2);
-    }
-    .leader-card {
-        background-color: rgba(59, 61, 73, 0.8) !important;
-        border-radius: 8px;
-        padding: 15px;
-        margin: 10px 0;
-        color: #ffffff !important;
-        border: 1px solid rgba(250, 250, 250, 0.2);
-    }
-    .news-card {
-        background-color: rgba(59, 61, 73, 0.8) !important;
-        border-radius: 8px;
-        padding: 15px;
-        margin: 10px 0;
-        color: #ffffff !important;
-        border: 1px solid rgba(250, 250, 250, 0.2);
-    }
-    .info-label {
-        font-weight: bold;
-        color: #ff9494 !important;
-        min-width: 120px;
-        display: inline-block;
-    }
-    .section-header {
-        color: #ffffff !important;
-        margin: 20px 0 10px 0;
-    }
-    /* Links styling */
-    .org-box a, .leader-card a, .news-card a {
-        color: #00ff95 !important;
-        text-decoration: none;
-    }
-    .org-box a:hover, .leader-card a:hover, .news-card a:hover {
-        text-decoration: underline;
-        opacity: 0.8;
-    }
-    /* Small text styling */
-    .small-text {
-        color: #a8a8a8 !important;
-        font-size: 0.9em;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
     # Get all organizations
     orgs = db_manager.get_all_organizations()
     
     if orgs:
-        org_names = [org['name'] for org in orgs]
-        selected_org = st.selectbox("Select an organization to view:", org_names)
+        col1, col2 = st.columns([3, 1])
         
-        if selected_org:
+        with col1:
+            selected_org = st.selectbox(
+                "Select an organization to view:", 
+                [org['name'] for org in orgs],
+                key="org_selector"
+            )
+        
+        with col2:
+            # Initialize session state for delete confirmation
+            if 'delete_confirmation' not in st.session_state:
+                st.session_state.delete_confirmation = False
+                st.session_state.org_to_delete = None
+
+            if st.button("🗑️ Delete Organization", type="secondary", use_container_width=True):
+                st.session_state.delete_confirmation = True
+                st.session_state.org_to_delete = selected_org
+
+        # Handle delete confirmation
+        if st.session_state.delete_confirmation:
+            st.warning(f"⚠️ Are you sure you want to delete {st.session_state.org_to_delete}? This action cannot be undone.")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ Yes, Delete", type="primary", key="confirm_delete"):
+                    if db_manager.delete_organization(st.session_state.org_to_delete):
+                        st.success(f"Organization '{st.session_state.org_to_delete}' has been deleted!")
+                        # Reset session state
+                        st.session_state.delete_confirmation = False
+                        st.session_state.org_to_delete = None
+                        # Rerun to refresh the page
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("Failed to delete organization. Please try again.")
+            with col2:
+                if st.button("❌ Cancel", key="cancel_delete"):
+                    st.session_state.delete_confirmation = False
+                    st.session_state.org_to_delete = None
+                    st.rerun()
+
+        # Display organization information only if not in delete confirmation mode
+        if selected_org and not st.session_state.delete_confirmation:
             org = next((org for org in orgs if org['name'] == selected_org), None)
-            
             if org:
                 # Organization Overview
                 st.markdown(f"""
