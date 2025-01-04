@@ -331,99 +331,68 @@ with tab1:
     </style>
     """, unsafe_allow_html=True)
 
-    # Search interface
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        org_name = st.text_input("Enter organization name:", key="org_search", 
-                                placeholder="e.g., Democratic Party, Republican Party")
-    with col2:
-        if st.button("Research Organization", type="primary", use_container_width=True):
-            if org_name:
-                try:
-                    with st.spinner("🔍 Researching organization..."):
-                        raw_data = asyncio.run(research_organization(org_name))
-                        
-                        if raw_data:
-                            structured_data = data_processor.structure_organization_data(raw_data)
-                            
-                            if structured_data:
-                                # Create tabs for different sections of information
-                                info_tab1, info_tab2, info_tab3 = st.tabs(["Overview", "Leadership", "News"])
-                                
-                                with info_tab1:
-                                    org_info = structured_data['organization']
-                                    st.markdown(f"""
-                                    <div class="results-box">
-                                        <h3>{org_info['name']}</h3>
-                                        <div class="data-row">
-                                            <span class="info-tag">Description:</span>
-                                            <span>{org_info['description']}</span>
-                                        </div>
-                                        <div class="data-row">
-                                            <span class="info-tag">Ideology:</span>
-                                            <span>{org_info['ideology']}</span>
-                                        </div>
-                                        <div class="data-row">
-                                            <span class="info-tag">Founded:</span>
-                                            <span>{org_info['founding_date']}</span>
-                                        </div>
-                                        <div class="data-row">
-                                            <span class="info-tag">Headquarters:</span>
-                                            <span>{org_info['headquarters']}</span>
-                                        </div>
-                                        {f'<div class="data-row"><span class="info-tag">Website:</span><a href="{org_info["website"]}" target="_blank">{org_info["website"]}</a></div>' if org_info.get('website') else ''}
-                                    </div>
-                                    """, unsafe_allow_html=True)
+    st.subheader("Research Organizations")
+    
+    # Create two columns for search
+    search_col1, search_col2 = st.columns([3, 1])
+    
+    with search_col1:
+        search_query = st.text_input("Enter organization name:", key="org_search")
+    
+    with search_col2:
+        search_button = st.button("🔍 Search", use_container_width=True)
 
-                                with info_tab2:
-                                    if structured_data.get('leaders'):
-                                        for leader in structured_data['leaders']:
-                                            st.markdown(f"""
-                                            <div class="info-card">
-                                                <h4>{leader['name']}</h4>
-                                                <div class="data-row">
-                                                    <span class="info-tag">Position:</span>
-                                                    <span>{leader['position']}</span>
-                                                </div>
-                                                {f'<div class="data-row"><span class="info-tag">Background:</span><span>{leader["background"]}</span></div>' if leader.get('background') else ''}
-                                                {f'<div class="data-row"><span class="info-tag">Education:</span><span>{leader["education"]}</span></div>' if leader.get('education') else ''}
-                                                {f'<div class="data-row"><span class="info-tag">Political History:</span><span>{leader["political_history"]}</span></div>' if leader.get('political_history') else ''}
-                                            </div>
-                                            """, unsafe_allow_html=True)
-                                    else:
-                                        st.info("No leadership information available.")
-
-                                with info_tab3:
-                                    if structured_data.get('news'):
-                                        for news_item in structured_data['news']:
-                                            st.markdown(f"""
-                                            <div class="info-card">
-                                                <h4>{news_item['title']}</h4>
-                                                <p>{news_item['content']}</p>
-                                                {f'<p><a href="{news_item["source_url"]}" target="_blank">Read more →</a></p>' if news_item.get('source_url') else ''}
-                                                {f'<p class="small-text">Published: {news_item["publication_date"]}</p>' if news_item.get('publication_date') else ''}
-                                            </div>
-                                            """, unsafe_allow_html=True)
-                                    else:
-                                        st.info("No recent news available.")
-
-                                # Save to database message
-                                if db_manager.save_organization_data(structured_data):
-                                    st.markdown("""
-                                    <div class="success-message">
-                                        ✅ Organization information saved to database!
-                                    </div>
-                                    """, unsafe_allow_html=True)
-                                else:
-                                    st.warning("⚠️ Failed to save organization information to database.")
+    if search_button and search_query:
+        try:
+            with st.spinner("🔄 Searching and processing..."):
+                # Get organization data
+                org_data = asyncio.run(org_searcher.fetch_organization_data(search_query))
+                
+                if org_data:
+                    # Structure the data
+                    structured_data = data_processor.structure_organization_data(org_data)
+                    
+                    if structured_data:
+                        # Automatically save to database
+                        try:
+                            result = db_manager.save_organization_data(structured_data)
+                            if result:
+                                st.success("✅ Information found and saved successfully!")
                             else:
-                                st.error("❌ Failed to structure the organization data")
-                        else:
-                            st.warning("⚠️ No information found for this organization. Please try a different search term.")
+                                st.error("⚠️ Information found but could not be saved.")
+                        except Exception as e:
+                            st.error(f"❌ Database error: {str(e)}")
+                            logging.error(f"Database save error: {str(e)}")
+                        
+                        # Display organization info
+                        with st.expander("📋 Organization Information", expanded=True):
+                            # Display organization details
+                            org_info = structured_data.get("organization", {})
+                            st.markdown(f"### {org_info.get('name', 'Organization Name')}")
+                            st.write(f"**Description:** {org_info.get('description', 'N/A')}")
+                            st.write(f"**Ideology:** {org_info.get('ideology', 'N/A')}")
+                            st.write(f"**Founded:** {org_info.get('founding_date', 'N/A')}")
+                            st.write(f"**Headquarters:** {org_info.get('headquarters', 'N/A')}")
+                            if org_info.get('website'):
+                                st.write(f"**Website:** {org_info['website']}")
                             
-                except Exception as e:
-                    st.error(f"❌ An error occurred: {str(e)}")
-                    logging.error(f"Error in organization search: {str(e)}")
+                            # Display leaders if available
+                            if structured_data.get("leaders"):
+                                st.markdown("### Leadership")
+                                for leader in structured_data["leaders"]:
+                                    st.markdown(f"""
+                                    **{leader.get('name', 'N/A')}** - {leader.get('position', 'N/A')}
+                                    - Background: {leader.get('background', 'N/A')}
+                                    - Education: {leader.get('education', 'N/A')}
+                                    """)
+                    else:
+                        st.error("❌ Failed to structure the organization data")
+                else:
+                    st.warning("⚠️ No information found for this organization. Please try a different search term.")
+                    
+        except Exception as e:
+            st.error(f"❌ An error occurred: {str(e)}")
+            logging.error(f"Error in organization search: {str(e)}")
 
 with tab2:
     search_term = st.text_input("Search organizations or members:", 
@@ -489,7 +458,6 @@ with tab3:
             if st.button("🗑️ Delete Organization", type="secondary", use_container_width=True):
                 st.session_state.delete_confirmation = True
                 st.session_state.org_to_delete = selected_org
-
         # Handle delete confirmation
         if st.session_state.delete_confirmation:
             st.warning(f"⚠️ Are you sure you want to delete {st.session_state.org_to_delete}? This action cannot be undone.")
@@ -545,7 +513,6 @@ with tab3:
                         """, unsafe_allow_html=True)
                 else:
                     st.info("No leadership information available for this organization.")
-                
                 # News Section
                 st.markdown('<h3 class="section-header">📰 Recent News</h3>', unsafe_allow_html=True)
                 news = db_manager.get_organization_news(org['name'])
@@ -563,4 +530,16 @@ with tab3:
                 else:
                     st.info("No recent news available for this organization.")
     else:
-        st.info("No organizations found in the database. Use the Research tab to add organizations.") 
+        st.info("No organizations found in the database. Use the Research tab to add organizations.")
+# Add after initializing db_manager
+try:
+    # Test database connection without adding/deleting data
+    db_manager = DatabaseManager()
+    # Just check if we can query the database
+    test_query = db_manager.supabase.table('organizations').select("*").limit(1).execute()
+    if test_query:
+        st.success("✅ Database connected successfully!")
+except Exception as e:
+    st.error(f"❌ Database setup failed: {str(e)}")
+    st.info("Please check your database configuration and refresh the page")
+    st.stop() 
