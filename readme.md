@@ -130,3 +130,6 @@ python-dotenv
 - Data is stored in a Supabase PostgreSQL database.
 - Streamlit is used for the web interface.
 - Async operations are implemented for improved performance.
+
+
+PS: I have kept .env and strealit configuration for files for your use they are not pushed by mistake it is for ease of use for you locally , i would not push them otherwise
