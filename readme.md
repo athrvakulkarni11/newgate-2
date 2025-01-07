@@ -30,7 +30,7 @@ A Streamlit-based web application for conducting political research and organiza
    GROQ_API_KEY = "your-groq-key"
    SERPAPI_KEY = "your-serpapi-key"
    NEWSAPI_KEY = "your-newsapi-key"
-   USER_AGENT = "Mozilla/5.0..."
+   USER_AGENT = "Mozilla/5.0..."(choose your own based on your browser and os)
    ```
 
 3. Configure Streamlit theme (optional) in `.streamlit/config.toml`:
