@@ -102,7 +102,7 @@ political-research-assistant/
     └── migrations/           # Database migrations
 ```
 
-## Key Dependencies
+## Key Dependencies 
 ```
 streamlit>=1.24.0
 supabase>=1.0.3
@@ -132,4 +132,4 @@ python-dotenv
 - Async operations are implemented for improved performance.
 
 
-PS: I have kept .env and strealit configuration for files for your use they are not pushed by mistake it is for ease of use for you locally , i would not push them otherwise
+ 
