@@ -83,7 +83,7 @@ def generate_report(content, sources):
     
     try:
         response = groq_client.chat.completions.create(
-            model="llama-3.2-90b-vision-preview",
+            model="llama3-70b-8192",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             max_tokens=4000
