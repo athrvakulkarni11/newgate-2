@@ -47,7 +47,7 @@ class OrganizationSearcher:
             """
 
             response = self.groq_client.chat.completions.create(
-                model="llama-3.2-90b-vision-preview",
+                model="llama3-70b-8192",
                 messages=[
                     {"role": "system", "content": "You are a research analyst providing factual information about organizations."},
                     {"role": "user", "content": org_prompt}
