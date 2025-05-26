@@ -62,7 +62,7 @@ if query:
 
 def generate_report(content, sources):
     """Generate report using Groq"""
-    prompt = f"""Based on the following content, generate a comprehensive report:
+    prompt = f"""Based on the following content, generate a comprehensive report on Query: {query}:
     {content}
     
     Sources:
